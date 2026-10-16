@@ -1,0 +1,1393 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Smart Room Lighting & Motion Guardian - ควบคุมไฟห้องอัจฉริยะ</title>
+  
+  <!-- Google Fonts: Prompt & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Phosphor Icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  <!-- Tone.js for sound effects (Alert & clicks) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Prompt', 'Inter', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              500: '#0ea5e9',
+              600: '#0284c7',
+              700: '#0369a1',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Prevent unwanted touch highlighted gray boxes on mobile */
+    * {
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    /* Glow animations for lights and motion */
+    @keyframes glow-light {
+      0%, 100% { box-shadow: 0 0 15px 2px rgba(245, 158, 11, 0.4); }
+      50% { box-shadow: 0 0 25px 6px rgba(245, 158, 11, 0.6); }
+    }
+    .light-active-glow {
+      animation: glow-light 2.5s infinite ease-in-out;
+    }
+    @keyframes alert-pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.015); opacity: 0.95; }
+    }
+    .alert-card-pulse {
+      animation: alert-pulse 1.8s infinite ease-in-out;
+    }
+    /* Smooth custom scrolling */
+    .hide-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .hide-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    /* Mobile Safe Area Padding */
+    .pb-safe {
+      padding-bottom: max(5rem, env(safe-area-inset-bottom) + 4.5rem);
+    }
+  </style>
+</head>
+
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col md:flex-row antialiased select-none overflow-x-hidden">
+
+  <!-- Desktop Sidebar Navigation -->
+  <aside class="hidden md:flex flex-col w-64 bg-white border-r border-slate-200/90 p-5 justify-between shrink-0 h-screen sticky top-0">
+    <div class="space-y-6">
+      <!-- App Brand Logo -->
+      <div class="flex items-center gap-3 px-2">
+        <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-300 flex items-center justify-center text-white shadow-md shadow-amber-500/20">
+          <i class="ph-bold ph-lightbulb text-2xl"></i>
+        </div>
+        <div>
+          <h1 class="text-base font-bold tracking-tight text-slate-900 leading-none">LuminaGuard</h1>
+          <span class="text-[11px] text-amber-600 font-semibold uppercase tracking-wider">ระบบไฟห้องอัจฉริยะ</span>
+        </div>
+      </div>
+
+      <!-- Navigation Menu -->
+      <nav class="space-y-1">
+        <button onclick="switchTab('rooms')" id="nav-btn-rooms" class="sidebar-nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-semibold transition-all bg-amber-50 text-amber-700">
+          <i class="ph-fill ph-house-line text-lg"></i>
+          <span>ควบคุมไฟรายห้อง</span>
+        </button>
+        <button onclick="switchTab('automation')" id="nav-btn-automation" class="sidebar-nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-all">
+          <i class="ph-bold ph-bell-ringing text-lg"></i>
+          <span>การแจ้งเตือน & เงื่อนไข</span>
+          <span id="badge-alert-count" class="ml-auto hidden bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">0</span>
+        </button>
+        <button onclick="switchTab('ai')" id="nav-btn-ai" class="sidebar-nav-item w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-all">
+          <i class="ph-bold ph-sparkle text-lg text-amber-500"></i>
+          <span>AI วิเคราะห์พลังงาน</span>
+          <span class="ml-auto bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full">Gemini</span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- Quick Energy Summary Card -->
+    <div class="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl p-4 shadow-sm space-y-3">
+      <div class="flex items-center justify-between">
+        <span class="text-xs text-slate-400">กำลังไฟรวมขณะนี้</span>
+        <span class="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
+          <i class="ph-bold ph-lightning"></i>
+          <span id="sidebar-power-usage">140W</span>
+        </span>
+      </div>
+      <div class="space-y-1">
+        <div class="flex justify-between text-xs text-slate-300">
+          <span>เปิดใช้งาน:</span>
+          <span id="sidebar-active-lights" class="font-bold text-amber-400">2 จาก 4 ห้อง</span>
+        </div>
+        <div class="w-full bg-slate-700/80 rounded-full h-1.5 overflow-hidden">
+          <div id="sidebar-power-bar" class="bg-amber-400 h-1.5 rounded-full transition-all duration-500" style="width: 50%"></div>
+        </div>
+      </div>
+      <button onclick="turnOffAllLights()" class="w-full mt-2 py-2 px-3 rounded-xl bg-rose-600/90 hover:bg-rose-600 active:scale-95 text-xs font-semibold text-white transition flex items-center justify-center gap-1.5">
+        <i class="ph-bold ph-power"></i> สั่งปิดไฟทั้งหมด
+      </button>
+    </div>
+  </aside>
+
+  <div class="flex-1 flex flex-col min-h-screen max-w-full overflow-x-hidden pb-safe md:pb-6">
+    
+    <!-- Top Bar Header (Mobile Ergonomic Sticky) -->
+    <header class="bg-white/95 backdrop-blur-md sticky top-0 z-30 border-b border-slate-200/80 px-3.5 md:px-8 py-2.5 md:py-3.5 flex items-center justify-between shadow-xs">
+      <div class="flex items-center gap-2.5">
+        <!-- Mobile Logo Icon -->
+        <div class="md:hidden w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-300 flex items-center justify-center text-white shadow-xs shrink-0">
+          <i class="ph-bold ph-lightbulb text-lg"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h2 id="page-title" class="text-sm md:text-xl font-bold text-slate-900 leading-tight">ควบคุมสถานะไฟห้อง</h2>
+            <span id="header-safety-badge" class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+              สถานะ: ปกติ ไม่มีการลืมปิดไฟ
+            </span>
+          </div>
+          <p class="text-[11px] text-slate-500 hidden sm:block">ระบบตรวจจับเซนเซอร์ PIR อัตโนมัติและแจ้งเตือนผ่านเว็บ</p>
+        </div>
+      </div>
+
+      <!-- Header actions & Export / Audio toggle -->
+      <div class="flex items-center gap-1.5 md:gap-3">
+        <!-- Export Data Button -->
+        <button onclick="openExportModal()" class="min-h-[38px] px-3 flex items-center gap-1.5 bg-amber-50 active:bg-amber-100 text-amber-700 border border-amber-200 rounded-full text-xs font-semibold transition" title="Export ข้อมูลและรายงาน">
+          <i class="ph-bold ph-export text-base"></i>
+          <span class="hidden sm:inline">Export ข้อมูล</span>
+        </button>
+
+        <!-- Sound Effect Toggle -->
+        <button onclick="toggleSound()" id="sound-btn" class="min-h-[38px] px-3 flex items-center gap-1.5 bg-slate-100 active:bg-slate-200 text-slate-700 rounded-full text-xs font-medium transition" title="เปิด/ปิดเสียงแจ้งเตือน">
+          <i id="sound-icon" class="ph-bold ph-speaker-high text-slate-600 text-base"></i>
+          <span class="hidden sm:inline" id="sound-text">เสียงเตือน: เปิด</span>
+        </button>
+
+        <!-- Master Turn Off Mobile/Desktop -->
+        <button onclick="turnOffAllLights()" class="min-h-[38px] px-3 bg-rose-50 text-rose-700 border border-rose-200 active:bg-rose-100 active:scale-95 rounded-full text-xs font-bold transition flex items-center gap-1">
+          <i class="ph-bold ph-power text-base"></i>
+          <span>ปิดไฟทุกห้อง</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="main-swipe-area" class="flex-1 p-3.5 md:p-8 max-w-7xl w-full mx-auto space-y-4 md:space-y-6">
+
+      <!-- DYNAMIC ALERT BANNER -->
+      <div id="unattended-alert-banner" class="hidden alert-card-pulse bg-gradient-to-r from-rose-600 via-rose-500 to-amber-600 rounded-2xl md:rounded-3xl p-4 md:p-5 text-white shadow-lg shadow-rose-900/10 border border-rose-400/40 relative overflow-hidden">
+        <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4">
+          <div class="flex items-start gap-3">
+            <div class="w-10 h-10 md:w-11 md:h-11 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0 text-white text-xl md:text-2xl">
+              <i class="ph-bold ph-warning-octagon"></i>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="bg-white/20 text-[10px] md:text-[11px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider">แจ้งเตือนเร่งด่วน</span>
+                <span id="alert-rooms-time" class="text-[11px] md:text-xs text-rose-100">ไม่มีคนอยู่เกิน 1 นาที</span>
+              </div>
+              <h3 id="alert-rooms-title" class="text-base md:text-xl font-bold mt-0.5 leading-snug">ตรวจพบการเปิดไฟทิ้งไว้โดยไม่มีคนอยู่!</h3>
+              <p id="alert-rooms-desc" class="text-xs md:text-sm text-rose-100 mt-0.5">
+                เซนเซอร์ PIR ไม่พบบุคคล แต่หลอดไฟยังคงทำงานอยู่
+              </p>
+            </div>
+          </div>
+          <!-- Action Buttons in Banner -->
+          <div class="flex items-center gap-2 mt-1 md:mt-0 self-stretch md:self-center shrink-0">
+            <button onclick="turnOffAlertedRooms()" class="flex-1 md:flex-initial min-h-[42px] bg-white text-rose-700 active:bg-rose-50 active:scale-95 px-4 py-2 rounded-xl font-bold text-xs md:text-sm shadow-md transition flex items-center justify-center gap-1.5">
+              <i class="ph-bold ph-lightbulb-filament text-base"></i>
+              ปิดไฟเฉพาะห้องที่ไม่มีคน
+            </button>
+            <button onclick="dismissAlertBanner()" class="min-h-[42px] min-w-[42px] bg-black/20 active:bg-black/30 text-white rounded-xl text-sm transition flex items-center justify-center shrink-0" title="ซ่อนชั่วคราว">
+              <i class="ph-bold ph-x text-base"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= SECTION 1: ROOMS CONTROL TAB ================= -->
+      <div id="tab-rooms" class="tab-content space-y-4 md:space-y-6 block">
+        
+        <!-- Summary Stats Cards Mobile Layout (2x2 Grid) -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-5">
+          <!-- Stat 1: หลอดไฟที่เปิดอยู่ -->
+          <div class="bg-white rounded-2xl p-3.5 md:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between">
+            <div>
+              <span class="text-[11px] md:text-xs font-medium text-slate-500">ไฟที่เปิดอยู่</span>
+              <div class="mt-0.5 flex items-baseline gap-1">
+                <span id="stat-active-lights" class="text-xl md:text-3xl font-bold text-slate-900">2</span>
+                <span class="text-[11px] md:text-xs font-semibold text-slate-500">/ 4 ห้อง</span>
+              </div>
+            </div>
+            <div class="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center shrink-0">
+              <i class="ph-bold ph-lightbulb text-lg md:text-xl"></i>
+            </div>
+          </div>
+
+          <!-- Stat 2: การตรวจจับบุคคล -->
+          <div class="bg-white rounded-2xl p-3.5 md:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between">
+            <div>
+              <span class="text-[11px] md:text-xs font-medium text-slate-500">ห้องที่มีคนอยู่</span>
+              <div class="mt-0.5 flex items-baseline gap-1">
+                <span id="stat-active-motion" class="text-xl md:text-3xl font-bold text-slate-900">1</span>
+                <span class="text-[11px] md:text-xs font-semibold text-slate-500">/ 4 ห้อง</span>
+              </div>
+            </div>
+            <div class="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+              <i class="ph-bold ph-person-simple-walk text-lg md:text-xl"></i>
+            </div>
+          </div>
+
+          <!-- Stat 3: ห้องที่เปิดไฟทิ้งไว้ -->
+          <div class="bg-white rounded-2xl p-3.5 md:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between">
+            <div>
+              <span class="text-[11px] md:text-xs font-medium text-slate-500">เปิดทิ้งไว้ (ไม่มีคน)</span>
+              <div class="mt-0.5 flex items-baseline gap-1">
+                <span id="stat-unattended-lights" class="text-xl md:text-3xl font-bold text-rose-600">1</span>
+                <span class="text-[11px] md:text-xs font-semibold text-slate-500">ห้อง</span>
+              </div>
+            </div>
+            <div id="stat-unattended-box" class="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+              <i class="ph-bold ph-warning text-lg md:text-xl"></i>
+            </div>
+          </div>
+
+          <!-- Stat 4: ประมาณการค่าไฟวันนี้ -->
+          <div class="bg-white rounded-2xl p-3.5 md:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between">
+            <div>
+              <span class="text-[11px] md:text-xs font-medium text-slate-500">ใช้พลังงานสะสม</span>
+              <div class="mt-0.5 flex items-baseline gap-1">
+                <span id="stat-kwh" class="text-xl md:text-3xl font-bold text-slate-900">1.82</span>
+                <span class="text-[11px] md:text-xs font-semibold text-slate-500">kWh</span>
+              </div>
+            </div>
+            <div class="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <i class="ph-bold ph-gauge text-lg md:text-xl"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Room Cards Grid -->
+        <div class="space-y-2.5">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+            <h3 class="font-bold text-sm md:text-lg text-slate-900 flex items-center gap-1.5">
+              <i class="ph-bold ph-lamp text-amber-500"></i>
+              สวิตช์ไฟและสถานะจำลองประจำห้อง
+            </h3>
+            <span class="text-[11px] text-slate-400">แตะที่ปุ่มสถานะคนเพื่อจำลองเดินเข้า-ออกจากห้อง</span>
+          </div>
+
+          <div id="rooms-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-3 md:gap-4">
+            <!-- Room cards dynamically rendered by JavaScript -->
+          </div>
+        </div>
+
+        <!-- Quick Info Callout -->
+        <div class="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/80 flex items-start gap-2.5 text-xs text-amber-900">
+          <i class="ph-bold ph-info text-amber-600 text-base shrink-0 mt-0.5"></i>
+          <div>
+            <strong>คำแนะนำใช้งาน:</strong> แตะสวิตช์เพื่อเปิด/ปิดไฟ และแตะปุ่ม <strong>"เซนเซอร์คน"</strong> เพื่อลองจำลองคนเดินออกจากห้อง ระบบจะนับถอยหลังแจ้งเตือนทันที!
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ================= SECTION 2: AUTOMATION & RULES TAB ================= -->
+      <div id="tab-automation" class="tab-content space-y-4 hidden">
+        <div class="bg-white rounded-2xl md:rounded-3xl p-4 md:p-6 border border-slate-200/90 shadow-xs space-y-4 md:space-y-6">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <div>
+              <h3 class="font-bold text-sm md:text-lg text-slate-900">การตั้งค่าการแจ้งเตือนและการปิดอัตโนมัติ</h3>
+              <p class="text-xs text-slate-500">กำหนดเวลาหน่วงก่อนแจ้งเตือน และเปิดโหมด Auto-Turn-Off เมื่อไม่มีคนอยู่</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="openExportModal()" class="min-h-[42px] bg-amber-50 active:bg-amber-100 text-amber-700 border border-amber-200 text-xs font-semibold px-3 py-2 rounded-xl transition flex items-center gap-1.5">
+                <i class="ph-bold ph-export text-base"></i> Export
+              </button>
+              <button onclick="saveAutomationSettings()" class="min-h-[42px] bg-amber-500 active:bg-amber-600 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5">
+                <i class="ph-bold ph-floppy-disk text-base"></i> บันทึก
+              </button>
+            </div>
+          </div>
+
+          <!-- Setting 1: Motion Timeout before Alert -->
+          <div class="space-y-3">
+            <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 class="font-bold text-xs md:text-sm text-slate-800">หน่วงเวลาแจ้งเตือนเมื่อไม่มีคนอยู่ (Alert Delay)</h4>
+                <p class="text-[11px] md:text-xs text-slate-500">ระยะเวลาอนุญาตให้เปิดไฟทิ้งไว้หลังจากไม่พบการเคลื่อนไหว</p>
+              </div>
+              <div class="flex items-center gap-3">
+                <select id="setting-timeout" class="w-full sm:w-auto min-h-[42px] bg-white border border-slate-200 text-slate-800 text-xs font-semibold py-2 px-3 rounded-xl focus:outline-none focus:border-amber-500">
+                  <option value="30">30 วินาที (สำหรับทดสอบ)</option>
+                  <option value="60" selected>1 นาที (แนะนำ)</option>
+                  <option value="180">3 นาที</option>
+                  <option value="300">5 นาที</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Setting 2: Auto Power Off -->
+            <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 class="font-bold text-xs md:text-sm text-slate-800">ระบบปิดไฟอัตโนมัติทันที (Auto-Off)</h4>
+                <p class="text-[11px] md:text-xs text-slate-500">สั่งปิดไฟทันทีเมื่อไม่มีคนอยู่นานเกินเวลาที่กำหนด โดยไม่ต้องรอผู้ใช้กดสั่ง</p>
+              </div>
+              <div class="flex items-center justify-between sm:justify-start gap-3">
+                <span id="text-auto-off-status" class="text-xs font-semibold text-slate-600">ปิดใช้งาน</span>
+                <button onclick="toggleAutoOffFeature()" id="btn-auto-off-toggle" class="relative inline-flex h-8 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none bg-slate-300">
+                  <span id="knob-auto-off" class="pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-0"></span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Setting 3: Audio Siren Warning -->
+            <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 class="font-bold text-xs md:text-sm text-slate-800">ส่งเสียงเตือนผ่านลำโพงของเบราว์เซอร์</h4>
+                <p class="text-[11px] md:text-xs text-slate-500">ส่งเสียง Beep แจ้งเตือนเมื่อตรวจพบห้องที่เปิดไฟทิ้งไว้</p>
+              </div>
+              <button onclick="testBeepSound()" class="min-h-[42px] px-3.5 rounded-xl border border-slate-300 active:bg-slate-200 text-xs font-semibold text-slate-700 transition flex items-center justify-center gap-1.5">
+                <i class="ph-bold ph-speaker-high text-base"></i> ทดสอบเสียงเตือน
+              </button>
+            </div>
+          </div>
+
+          <!-- Alert History Logs -->
+          <div class="pt-3 border-t border-slate-100 space-y-2.5">
+            <div class="flex items-center justify-between">
+              <h4 class="font-bold text-xs md:text-sm text-slate-800">ประวัติการแจ้งเตือนล่าสุด</h4>
+              <button onclick="clearAlertHistory()" class="text-xs text-slate-400 hover:text-slate-600 active:scale-95">ล้างประวัติ</button>
+            </div>
+            <div id="alert-history-list" class="space-y-2 max-h-56 overflow-y-auto">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= SECTION 3: AI ADVISOR TAB ================= -->
+      <div id="tab-ai" class="tab-content space-y-3 hidden h-[calc(100vh-160px)] md:h-[calc(100vh-150px)] flex flex-col">
+        <div class="bg-white rounded-2xl md:rounded-3xl border border-slate-200 shadow-xs flex-1 flex flex-col overflow-hidden">
+          
+          <!-- Header -->
+          <div class="p-3.5 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between shrink-0">
+            <div class="flex items-center gap-2.5">
+              <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-300 text-white flex items-center justify-center shadow-xs">
+                <i class="ph-bold ph-sparkle text-lg"></i>
+              </div>
+              <div>
+                <h3 class="font-bold text-xs md:text-sm text-slate-900 flex items-center gap-1.5">
+                  Lumina AI ผู้เชี่ยวชาญการประหยัดพลังงาน
+                  <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                </h3>
+                <p class="text-[11px] text-slate-500">วิเคราะห์ข้อมูลการเปิด-ปิดไฟและให้คำแนะนำลดค่าไฟ</p>
+              </div>
+            </div>
+            <button onclick="clearAIChat()" class="text-slate-400 hover:text-slate-600 p-2 rounded-xl active:bg-slate-200/50 transition" title="ล้างประวัติ">
+              <i class="ph-bold ph-trash text-base"></i>
+            </button>
+          </div>
+
+          <!-- Chat messages area -->
+          <div id="ai-chat-messages" class="flex-1 overflow-y-auto p-3.5 md:p-6 space-y-3 bg-slate-50/30 text-xs md:text-sm">
+            <div class="flex items-start gap-2.5 max-w-xl">
+              <div class="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                <i class="ph-bold ph-robot text-sm"></i>
+              </div>
+              <div class="bg-white rounded-2xl rounded-tl-sm p-3.5 border border-slate-200/90 shadow-xs space-y-1.5 text-slate-800 leading-relaxed text-xs md:text-sm">
+                <p class="font-semibold text-amber-700">สวัสดีครับ! ผมคือ Lumina AI 💡</p>
+                <p>ผมคอยติดตามสถานะหลอดไฟและเซนเซอร์การเคลื่อนไหวในแต่ละห้องของคุณแบบเรียลไทม์ สามารถปรึกษาการคำนวณค่าไฟ หรือตั้งค่าการประหยัดพลังงานได้เลยครับ!</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Suggested Quick Prompts Horizontal Scroll -->
+          <div class="px-3 py-2 bg-slate-50/90 border-t border-slate-100 flex items-center gap-1.5 overflow-x-auto hide-scrollbar shrink-0">
+            <span class="text-[10px] font-semibold text-slate-400 shrink-0">ถามด่วน:</span>
+            <button onclick="askAIPreset('ช่วยวิเคราะห์สถานะไฟตอนนี้ว่ามีห้องไหนสิ้นเปลืองพลังงานหรือไม่');" class="shrink-0 text-[11px] bg-white active:bg-amber-50 text-slate-700 active:text-amber-700 px-2.5 py-1.5 rounded-full border border-slate-200 transition">
+              ⚡ วิเคราะห์การใช้ไฟตอนนี้
+            </button>
+            <button onclick="askAIPreset('ถ้าลืมปิดไฟหลอด 36W วันละ 3 ชั่วโมง จะเสียค่าไฟเดือนละกี่บาท?');" class="shrink-0 text-[11px] bg-white active:bg-amber-50 text-slate-700 active:text-amber-700 px-2.5 py-1.5 rounded-full border border-slate-200 transition">
+              💰 คำนวณค่าไฟลืมปิดไฟ
+            </button>
+            <button onclick="askAIPreset('แนะนำแนวทางการวางเซนเซอร์จับความเคลื่อนไหวในห้องน้ำและห้องนอน');" class="shrink-0 text-[11px] bg-white active:bg-amber-50 text-slate-700 active:text-amber-700 px-2.5 py-1.5 rounded-full border border-slate-200 transition">
+              📍 ตำแหน่งติดเซนเซอร์ที่ดี
+            </button>
+          </div>
+
+          <!-- Input Form for Mobile -->
+          <form id="ai-chat-form" onsubmit="handleAIChatSubmit(event)" class="p-2.5 md:p-4 bg-white border-t border-slate-200/80 flex items-center gap-2 shrink-0">
+            <input 
+              type="text" 
+              id="ai-chat-input" 
+              placeholder="พิมพ์คำถามเกี่ยวกับไฟหรือพลังงาน..." 
+              class="flex-1 bg-slate-100 focus:bg-white text-slate-900 placeholder:text-slate-400 text-xs md:text-sm px-3.5 py-2.5 rounded-xl border border-transparent focus:border-amber-500 focus:outline-none transition min-h-[42px]"
+              autocomplete="off"
+            />
+            <button 
+              type="submit" 
+              class="bg-amber-500 active:bg-amber-600 text-white min-w-[42px] min-h-[42px] rounded-xl flex items-center justify-center transition shadow-xs shrink-0"
+            >
+              <i class="ph-bold ph-paper-plane-tilt text-base"></i>
+            </button>
+          </form>
+
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Mobile Ergonomic Bottom Navigation Bar -->
+    <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-slate-200/90 z-40 px-2 py-1 flex items-center justify-around shadow-lg pb-[max(0.25rem,env(safe-area-inset-bottom))]">
+      <button onclick="switchTab('rooms')" id="mob-btn-rooms" class="mobile-tab-btn flex flex-col items-center justify-center min-h-[48px] text-amber-600 px-3 py-1 flex-1 rounded-xl transition active:bg-slate-100">
+        <i class="ph-fill ph-house-line text-2xl"></i>
+        <span class="text-[10px] font-semibold mt-0.5">ห้อง & สวิตช์</span>
+      </button>
+      <button onclick="switchTab('automation')" id="mob-btn-automation" class="mobile-tab-btn flex flex-col items-center justify-center min-h-[48px] text-slate-400 active:text-slate-600 px-3 py-1 flex-1 rounded-xl transition active:bg-slate-100 relative">
+        <div class="relative">
+          <i class="ph-bold ph-bell-ringing text-2xl"></i>
+          <span id="mob-alert-dot" class="hidden absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white"></span>
+        </div>
+        <span class="text-[10px] font-medium mt-0.5">แจ้งเตือน</span>
+      </button>
+      <button onclick="switchTab('ai')" id="mob-btn-ai" class="mobile-tab-btn flex flex-col items-center justify-center min-h-[48px] text-slate-400 active:text-slate-600 px-3 py-1 flex-1 rounded-xl transition active:bg-slate-100">
+        <i class="ph-bold ph-sparkle text-2xl"></i>
+        <span class="text-[10px] font-medium mt-0.5">AI ปรึกษา</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <!-- Floating Toast Notification -->
+  <div id="toast" class="fixed top-3 left-3 right-3 md:left-auto md:right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 transition-all duration-300 transform translate-y-[-120%] opacity-0 pointer-events-none text-xs md:text-sm">
+    <i id="toast-icon" class="ph-fill ph-check-circle text-amber-400 text-lg shrink-0"></i>
+    <span id="toast-message" class="font-medium">แจ้งเตือน</span>
+  </div>
+
+  <!-- Export / Import Modal Dialog -->
+  <div id="export-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300">
+    <div class="bg-white rounded-3xl p-5 max-w-lg w-full shadow-2xl border border-slate-100 space-y-4 max-h-[90vh] flex flex-col">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div class="flex items-center gap-2.5">
+          <div class="w-10 h-10 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center text-xl shrink-0">
+            <i class="ph-bold ph-export"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-sm md:text-base text-slate-900">Export / Import ข้อมูลระบบ</h3>
+            <p class="text-[11px] text-slate-500">บันทึกสถานะไฟ ประวัติ และการตั้งค่าเป็นไฟล์ JSON หรือคัดลอกข้อความสรุป</p>
+          </div>
+        </div>
+        <button onclick="closeExportModal()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition">
+          <i class="ph-bold ph-x text-sm"></i>
+        </button>
+      </div>
+
+      <!-- Preview Textarea -->
+      <div class="space-y-1.5 flex-1 flex flex-col">
+        <label class="text-xs font-semibold text-slate-700 flex items-center justify-between">
+          <span>ข้อมูลระบบปัจจุบัน (JSON Data)</span>
+          <span class="text-[10px] text-slate-400">แก้ไขหรือนำเข้าได้</span>
+        </label>
+        <textarea id="export-textarea" class="w-full h-36 bg-slate-50 border border-slate-200 rounded-xl p-3 font-mono text-xs text-slate-700 focus:outline-none focus:border-amber-500 resize-none"></textarea>
+      </div>
+
+      <!-- Action Buttons Grid -->
+      <div class="grid grid-cols-2 gap-2 pt-1">
+        <button onclick="downloadJSONFile()" class="min-h-[42px] rounded-xl bg-amber-500 active:bg-amber-600 text-white text-xs font-semibold transition flex items-center justify-center gap-1.5 shadow-xs">
+          <i class="ph-bold ph-download-simple text-base"></i> ดาวน์โหลดไฟล์ .JSON
+        </button>
+        <button onclick="copyExportText()" class="min-h-[42px] rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 text-xs font-semibold transition flex items-center justify-center gap-1.5">
+          <i class="ph-bold ph-copy text-base"></i> คัดลอกข้อความ
+        </button>
+      </div>
+
+      <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+        <span>ต้องการโหลดข้อมูลเดิมกลับมา?</span>
+        <button onclick="importJSONData()" class="font-semibold text-amber-700 hover:underline">
+          <i class="ph-bold ph-upload"></i> นำเข้าข้อมูลจากกล่องข้อความ
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Alert Dialog Modal for Urgent Detection -->
+  <div id="alert-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300">
+    <div class="bg-white rounded-3xl p-5 max-w-sm w-full shadow-2xl border border-rose-100 space-y-3.5">
+      <div class="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center text-2xl mx-auto shrink-0">
+        <i class="ph-bold ph-warning-octagon"></i>
+      </div>
+      <div class="text-center space-y-1">
+        <h3 class="font-bold text-base text-slate-900">ตรวจพบการเปิดไฟทิ้งไว้!</h3>
+        <p id="alert-modal-text" class="text-xs text-slate-500">
+          ห้องต่อไปนี้เปิดไฟทิ้งไว้โดยไม่พบคนอยู่ในห้องเกินเวลาที่กำหนด
+        </p>
+      </div>
+      <div id="alert-modal-room-list" class="space-y-1.5 max-h-36 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-100 text-xs">
+        <!-- List inserted by JS -->
+      </div>
+      <div class="flex items-center gap-2 pt-1">
+        <button onclick="dismissAlertModal()" class="flex-1 min-h-[42px] rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold active:bg-slate-100 transition">
+          เพิกเฉย
+        </button>
+        <button onclick="turnOffAlertedRooms(); dismissAlertModal();" class="flex-1 min-h-[42px] rounded-xl bg-rose-600 text-white text-xs font-semibold active:bg-rose-700 shadow-xs transition">
+          ปิดไฟทันที
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ==========================================================================
+       1. App State & Room Configuration
+       ========================================================================== */
+    const appState = {
+      soundEnabled: true,
+      autoOffEnabled: false,
+      timeoutSeconds: 60, // 1 minute default
+      audioContextInitialized: false,
+      alertBannerDismissed: false,
+      currentTab: 'rooms',
+      rooms: [
+        {
+          id: 'living_room',
+          name: 'ห้องนั่งเล่น (Living Room)',
+          icon: 'ph-couch',
+          lightOn: true,
+          motionDetected: true,
+          unattendedSeconds: 0,
+          powerWatt: 45,
+          brightness: 80,
+          lastMotionTimestamp: Date.now()
+        },
+        {
+          id: 'bedroom',
+          name: 'ห้องนอนใหญ่ (Master Bedroom)',
+          icon: 'ph-bed',
+          lightOn: true,
+          motionDetected: false,
+          unattendedSeconds: 75, // Already unattended > 60s
+          powerWatt: 35,
+          brightness: 60,
+          lastMotionTimestamp: Date.now() - 75000
+        },
+        {
+          id: 'kitchen',
+          name: 'ห้องครัว (Kitchen)',
+          icon: 'ph-cooking-pot',
+          lightOn: false,
+          motionDetected: false,
+          unattendedSeconds: 0,
+          powerWatt: 30,
+          brightness: 100,
+          lastMotionTimestamp: Date.now() - 300000
+        },
+        {
+          id: 'bathroom',
+          name: 'ห้องน้ำ (Restroom)',
+          icon: 'ph-shower',
+          lightOn: false,
+          motionDetected: false,
+          unattendedSeconds: 0,
+          powerWatt: 20,
+          brightness: 100,
+          lastMotionTimestamp: Date.now() - 600000
+        }
+      ],
+      alertHistory: [
+        {
+          id: 1,
+          roomName: 'ห้องนอนใหญ่',
+          time: '13:10:24',
+          message: 'ตรวจพบไม่มีคนอยู่แต่ไฟยังเปิดอยู่ (ระบบแจ้งเตือน)'
+        }
+      ]
+    };
+
+    /* ==========================================================================
+       2. Audio Sound Synthesizer (Tone.js)
+       ========================================================================== */
+    let synth = null;
+
+    function initAudio() {
+      if (!appState.audioContextInitialized) {
+        try {
+          synth = new Tone.Synth().toDestination();
+          Tone.start();
+          appState.audioContextInitialized = true;
+        } catch (e) {
+          console.log('Audio init postponed:', e);
+        }
+      }
+    }
+
+    function playBeep(type = 'toggle') {
+      if (!appState.soundEnabled) return;
+      initAudio();
+      try {
+        if (!synth) synth = new Tone.Synth().toDestination();
+        if (type === 'on') {
+          synth.triggerAttackRelease("E5", "0.08");
+        } else if (type === 'off') {
+          synth.triggerAttackRelease("C4", "0.08");
+        } else if (type === 'alert') {
+          const now = Tone.now();
+          synth.triggerAttackRelease("A5", "0.1", now);
+          synth.triggerAttackRelease("E6", "0.15", now + 0.15);
+        }
+      } catch (err) {
+        console.warn('Tone audio error:', err);
+      }
+    }
+
+    function toggleSound() {
+      appState.soundEnabled = !appState.soundEnabled;
+      const soundText = document.getElementById('sound-text');
+      const soundIcon = document.getElementById('sound-icon');
+      if (appState.soundEnabled) {
+        soundText.innerText = 'เสียงเตือน: เปิด';
+        soundIcon.className = 'ph-bold ph-speaker-high text-amber-600';
+        showToast('เปิดเสียงเตือนแล้ว');
+        playBeep('on');
+      } else {
+        soundText.innerText = 'เสียงเตือน: ปิด';
+        soundIcon.className = 'ph-bold ph-speaker-slash text-slate-400';
+        showToast('ปิดเสียงเตือนแล้ว');
+      }
+    }
+
+    function testBeepSound() {
+      initAudio();
+      playBeep('alert');
+      showToast('ทดสอบเล่นเสียงสัญญาณเตือน');
+    }
+
+    /* ==========================================================================
+       3. Room Rendering and UI Updates
+       ========================================================================== */
+    function renderRoomCards() {
+      const container = document.getElementById('rooms-grid');
+      container.innerHTML = '';
+
+      appState.rooms.forEach(room => {
+        const isUnattended = room.lightOn && !room.motionDetected && room.unattendedSeconds >= appState.timeoutSeconds;
+        
+        const card = document.createElement('div');
+        card.id = `room-card-${room.id}`;
+        card.className = `p-4 rounded-2xl md:rounded-3xl border transition-all duration-300 relative overflow-hidden flex flex-col justify-between ${
+          isUnattended 
+            ? 'bg-rose-50/80 border-rose-300 shadow-md shadow-rose-500/10' 
+            : room.lightOn 
+              ? 'bg-amber-50/60 border-amber-300/90 shadow-xs' 
+              : 'bg-white border-slate-200/90 shadow-xs'
+        }`;
+
+        card.innerHTML = `
+          <!-- Header: Room Name & Light Switch -->
+          <div>
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 md:w-11 md:h-11 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
+                  room.lightOn 
+                    ? 'bg-amber-400 text-white light-active-glow' 
+                    : 'bg-slate-100 text-slate-400'
+                }">
+                  <i class="ph-bold ${room.icon} text-lg md:text-xl"></i>
+                </div>
+                <div>
+                  <h4 class="font-bold text-xs md:text-base text-slate-900 leading-tight">${room.name}</h4>
+                  <span class="text-[11px] md:text-xs ${room.lightOn ? 'text-amber-700 font-semibold' : 'text-slate-400'}">
+                    ${room.lightOn ? `เปิดอยู่ (${room.powerWatt}W)` : 'ปิดไฟแล้ว (0W)'}
+                  </span>
+                </div>
+              </div>
+
+              <!-- Scaled Up Toggle Switch for Touch -->
+              <button 
+                onclick="toggleRoomLight('${room.id}')" 
+                class="relative inline-flex h-9 w-16 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  room.lightOn ? 'bg-amber-500' : 'bg-slate-300'
+                }"
+              >
+                <span class="pointer-events-none inline-block h-8 w-8 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  room.lightOn ? 'translate-x-7' : 'translate-x-0'
+                }">
+                  <i class="ph-bold ${room.lightOn ? 'ph-lightbulb text-amber-500' : 'ph-power text-slate-400'} text-xs flex items-center justify-center h-full"></i>
+                </span>
+              </button>
+            </div>
+
+            <!-- Warning Status Pill if Unattended -->
+            ${isUnattended ? `
+              <div class="mt-3 p-2 rounded-xl bg-rose-500/10 border border-rose-300 text-rose-700 flex items-center justify-between text-xs font-semibold animate-pulse">
+                <span class="flex items-center gap-1 text-[11px]">
+                  <i class="ph-bold ph-warning-circle text-sm text-rose-600"></i>
+                  ไม่มีคนอยู่ (${Math.floor(room.unattendedSeconds)} วิ)
+                </span>
+                <button onclick="toggleRoomLight('${room.id}', false)" class="underline hover:text-rose-900 text-[11px]">
+                  ปิดไฟทันที
+                </button>
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- Footer: Sensor Simulator & Details -->
+          <div class="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between">
+            <div class="flex items-center gap-1.5">
+              <span class="text-[10px] md:text-[11px] text-slate-400">เซนเซอร์คน:</span>
+              <button 
+                onclick="toggleRoomMotion('${room.id}')" 
+                class="min-h-[36px] px-3 py-1 rounded-xl text-xs font-semibold transition active:scale-95 flex items-center gap-1.5 ${
+                  room.motionDetected 
+                    ? 'bg-blue-100 text-blue-700 border border-blue-200/80' 
+                    : 'bg-slate-100 text-slate-600 active:bg-slate-200'
+                }"
+                title="คลิกเพื่อจำลองสถานะคนเข้า/ออกจากห้อง"
+              >
+                <i class="ph-bold ${room.motionDetected ? 'ph-user-check text-blue-600 text-base' : 'ph-user-minus text-base'}"></i>
+                <span>${room.motionDetected ? 'มีคนอยู่' : 'ห้องว่าง'}</span>
+              </button>
+            </div>
+
+            <div class="text-right text-[10px] md:text-[11px] text-slate-400">
+              ความสว่าง: <span class="font-medium text-slate-700">${room.lightOn ? room.brightness + '%' : '0%'}</span>
+            </div>
+          </div>
+        `;
+
+        container.appendChild(card);
+      });
+
+      updateStats();
+    }
+
+    /* ==========================================================================
+       4. Light & Motion Interactive Controllers
+       ========================================================================== */
+    function toggleRoomLight(roomId, forceState = null) {
+      const room = appState.rooms.find(r => r.id === roomId);
+      if (!room) return;
+
+      room.lightOn = forceState !== null ? forceState : !room.lightOn;
+      if (!room.lightOn) {
+        room.unattendedSeconds = 0;
+        playBeep('off');
+        showToast(`ปิดไฟ ${room.name} แล้ว`);
+      } else {
+        room.unattendedSeconds = 0;
+        playBeep('on');
+        showToast(`เปิดไฟ ${room.name} แล้ว`);
+      }
+
+      appState.alertBannerDismissed = false;
+      renderRoomCards();
+      checkUnattendedConditions();
+    }
+
+    function toggleRoomMotion(roomId) {
+      const room = appState.rooms.find(r => r.id === roomId);
+      if (!room) return;
+
+      room.motionDetected = !room.motionDetected;
+      if (room.motionDetected) {
+        room.unattendedSeconds = 0;
+        room.lastMotionTimestamp = Date.now();
+        showToast(`${room.name}: ตรวจพบคนในห้อง`);
+      } else {
+        room.lastMotionTimestamp = Date.now();
+        showToast(`${room.name}: คนออกจากห้องแล้ว`);
+      }
+
+      renderRoomCards();
+      checkUnattendedConditions();
+    }
+
+    function turnOffAllLights() {
+      let changed = false;
+      appState.rooms.forEach(r => {
+        if (r.lightOn) {
+          r.lightOn = false;
+          r.unattendedSeconds = 0;
+          changed = true;
+        }
+      });
+      if (changed) {
+        playBeep('off');
+        showToast('ปิดไฟทุกห้องเรียบร้อยแล้ว');
+        renderRoomCards();
+        checkUnattendedConditions();
+      } else {
+        showToast('ไฟทุกห้องปิดอยู่แล้ว');
+      }
+    }
+
+    function turnOffAlertedRooms() {
+      let count = 0;
+      appState.rooms.forEach(r => {
+        if (r.lightOn && !r.motionDetected) {
+          r.lightOn = false;
+          r.unattendedSeconds = 0;
+          count++;
+        }
+      });
+      if (count > 0) {
+        playBeep('off');
+        showToast(`ปิดไฟ ${count} ห้องที่ไม่มีคนเรียบร้อยแล้ว`);
+        dismissAlertBanner();
+        renderRoomCards();
+        checkUnattendedConditions();
+      }
+    }
+
+    /* ==========================================================================
+       5. Automated Guardian Loop & Export Functions
+       ========================================================================== */
+    function openExportModal() {
+      const modal = document.getElementById('export-modal');
+      const textarea = document.getElementById('export-textarea');
+      
+      const exportData = {
+        app: "LuminaGuard Smart Room Lighting",
+        exportedAt: new Date().toISOString(),
+        settings: {
+          soundEnabled: appState.soundEnabled,
+          autoOffEnabled: appState.autoOffEnabled,
+          timeoutSeconds: appState.timeoutSeconds
+        },
+        rooms: appState.rooms,
+        alertHistory: appState.alertHistory
+      };
+
+      textarea.value = JSON.stringify(exportData, null, 2);
+      modal.classList.remove('hidden');
+      setTimeout(() => modal.classList.remove('opacity-0'), 10);
+    }
+
+    function closeExportModal() {
+      const modal = document.getElementById('export-modal');
+      modal.classList.add('opacity-0');
+      setTimeout(() => modal.classList.add('hidden'), 300);
+    }
+
+    function downloadJSONFile() {
+      try {
+        const textarea = document.getElementById('export-textarea');
+        const blob = new Blob([textarea.value], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `lumina-guard-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast('ดาวน์โหลดไฟล์ Backup สำเร็จแล้ว');
+      } catch (err) {
+        showToast('เกิดข้อผิดพลาดในการดาวน์โหลดไฟล์');
+      }
+    }
+
+    function copyExportText() {
+      const textarea = document.getElementById('export-textarea');
+      textarea.select();
+      textarea.setSelectionRange(0, 99999);
+      navigator.clipboard.writeText(textarea.value).then(() => {
+        showToast('คัดลอกข้อมูล JSON ไปยังคลิปบอร์ดแล้ว');
+      }).catch(() => {
+        showToast('ไม่สามารถคัดลอกอัตโนมัติได้');
+      });
+    }
+
+    function importJSONData() {
+      try {
+        const textarea = document.getElementById('export-textarea');
+        const parsed = JSON.parse(textarea.value);
+        if (parsed.rooms && Array.isArray(parsed.rooms)) {
+          appState.rooms = parsed.rooms;
+          if (parsed.settings) {
+            appState.soundEnabled = !!parsed.settings.soundEnabled;
+            appState.autoOffEnabled = !!parsed.settings.autoOffEnabled;
+            appState.timeoutSeconds = parsed.settings.timeoutSeconds || 60;
+            document.getElementById('setting-timeout').value = appState.timeoutSeconds;
+          }
+          if (parsed.alertHistory) {
+            appState.alertHistory = parsed.alertHistory;
+          }
+          renderRoomCards();
+          renderAlertHistory();
+          checkUnattendedConditions();
+          closeExportModal();
+          showToast('นำเข้าข้อมูลสำเร็จ!');
+        } else {
+          showToast('รูปแบบไฟล์ JSON ไม่ถูกต้อง');
+        }
+      } catch (err) {
+        showToast('JSON ไม่ถูกต้อง กรุณาตรวจสอบรูปแบบ');
+      }
+    }
+
+    function checkUnattendedConditions() {
+      const unattendedRooms = appState.rooms.filter(
+        r => r.lightOn && !r.motionDetected && r.unattendedSeconds >= appState.timeoutSeconds
+      );
+
+      const banner = document.getElementById('unattended-alert-banner');
+      const headerBadge = document.getElementById('header-safety-badge');
+      const badgeAlertCount = document.getElementById('badge-alert-count');
+      const mobAlertDot = document.getElementById('mob-alert-dot');
+
+      if (unattendedRooms.length > 0) {
+        if (!appState.alertBannerDismissed) {
+          banner.classList.remove('hidden');
+          const roomNames = unattendedRooms.map(r => r.name.split(' ')[0]).join(', ');
+          document.getElementById('alert-rooms-title').innerText = `ตรวจพบการเปิดไฟทิ้งไว้ใน: ${roomNames}`;
+          document.getElementById('alert-rooms-time').innerText = `ไม่มีคนอยู่นานกว่า ${appState.timeoutSeconds} วินาที`;
+        }
+
+        headerBadge.className = 'hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 animate-pulse';
+        headerBadge.innerHTML = `<i class="ph-bold ph-warning mr-1"></i> มีไฟเปิดทิ้งไว้ ${unattendedRooms.length} ห้อง`;
+
+        badgeAlertCount.innerText = unattendedRooms.length;
+        badgeAlertCount.classList.remove('hidden');
+        mobAlertDot.classList.remove('hidden');
+
+        if (appState.autoOffEnabled) {
+          unattendedRooms.forEach(room => {
+            room.lightOn = false;
+            room.unattendedSeconds = 0;
+            logAlertHistory(room.name, 'ระบบปิดไฟอัตโนมัติเนื่องจากไม่มีคนอยู่ (Auto-Off)');
+          });
+          playBeep('off');
+          showToast(`ระบบสั่งปิดไฟอัตโนมัติ ${unattendedRooms.length} ห้อง`);
+          renderRoomCards();
+        }
+
+      } else {
+        banner.classList.add('hidden');
+        headerBadge.className = 'hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800';
+        headerBadge.innerText = 'สถานะ: ปกติ ไม่มีการลืมปิดไฟ';
+        badgeAlertCount.classList.add('hidden');
+        mobAlertDot.classList.add('hidden');
+      }
+    }
+
+    setInterval(() => {
+      let stateChanged = false;
+      appState.rooms.forEach(room => {
+        if (room.lightOn && !room.motionDetected) {
+          room.unattendedSeconds += 3;
+          if (room.unattendedSeconds === appState.timeoutSeconds || 
+              (room.unattendedSeconds > appState.timeoutSeconds && room.unattendedSeconds <= appState.timeoutSeconds + 2)) {
+            playBeep('alert');
+            logAlertHistory(room.name, `เปิดไฟทิ้งไว้โดยไม่มีคนเกิน ${appState.timeoutSeconds} วินาที`);
+            stateChanged = true;
+          }
+        } else {
+          room.unattendedSeconds = 0;
+        }
+      });
+
+      checkUnattendedConditions();
+      updateStats();
+    }, 3000);
+
+    function dismissAlertBanner() {
+      appState.alertBannerDismissed = true;
+      document.getElementById('unattended-alert-banner').classList.add('hidden');
+    }
+
+    function logAlertHistory(roomName, reason) {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      appState.alertHistory.unshift({
+        id: Date.now(),
+        roomName: roomName,
+        time: timeStr,
+        message: reason
+      });
+      if (appState.alertHistory.length > 20) appState.alertHistory.pop();
+      renderAlertHistory();
+    }
+
+    function renderAlertHistory() {
+      const container = document.getElementById('alert-history-list');
+      if (!container) return;
+      if (appState.alertHistory.length === 0) {
+        container.innerHTML = '<div class="text-xs text-slate-400 py-3 text-center">ไม่มีประวัติการแจ้งเตือน</div>';
+        return;
+      }
+      container.innerHTML = appState.alertHistory.map(item => `
+        <div class="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs">
+          <div class="flex items-center gap-2.5">
+            <div class="w-7 h-7 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+              <i class="ph-bold ph-warning text-sm"></i>
+            </div>
+            <div>
+              <span class="font-bold text-slate-800">${item.roomName}</span>
+              <p class="text-slate-500">${item.message}</p>
+            </div>
+          </div>
+          <span class="text-slate-400 font-mono text-[11px] shrink-0 ml-2">${item.time}</span>
+        </div>
+      `).join('');
+    }
+
+    function clearAlertHistory() {
+      appState.alertHistory = [];
+      renderAlertHistory();
+      showToast('ล้างประวัติการแจ้งเตือนแล้ว');
+    }
+
+    /* ==========================================================================
+       6. Aggregated Statistics Update
+       ========================================================================== */
+    function updateStats() {
+      const activeLights = appState.rooms.filter(r => r.lightOn).length;
+      const activeMotion = appState.rooms.filter(r => r.motionDetected).length;
+      const unattendedLights = appState.rooms.filter(
+        r => r.lightOn && !r.motionDetected && r.unattendedSeconds >= appState.timeoutSeconds
+      ).length;
+
+      let currentWatts = 0;
+      appState.rooms.forEach(r => {
+        if (r.lightOn) currentWatts += r.powerWatt;
+      });
+
+      document.getElementById('stat-active-lights').innerText = activeLights;
+      document.getElementById('stat-active-motion').innerText = activeMotion;
+      document.getElementById('stat-unattended-lights').innerText = unattendedLights;
+      
+      const statUnattendedBox = document.getElementById('stat-unattended-box');
+      if (unattendedLights > 0) {
+        statUnattendedBox.className = 'w-10 h-10 rounded-xl bg-rose-500 text-white flex items-center justify-center animate-bounce';
+      } else {
+        statUnattendedBox.className = 'w-10 h-10 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center';
+      }
+
+      document.getElementById('sidebar-power-usage').innerText = `${currentWatts}W`;
+      document.getElementById('sidebar-active-lights').innerText = `${activeLights} จาก ${appState.rooms.length} ห้อง`;
+      const powerPercent = Math.min(100, (currentWatts / 150) * 100);
+      document.getElementById('sidebar-power-bar').style.width = `${powerPercent}%`;
+    }
+
+    /* ==========================================================================
+       7. Automation Settings Config
+       ========================================================================== */
+    function toggleAutoOffFeature() {
+      appState.autoOffEnabled = !appState.autoOffEnabled;
+      const btn = document.getElementById('btn-auto-off-toggle');
+      const knob = document.getElementById('knob-auto-off');
+      const text = document.getElementById('text-auto-off-status');
+
+      if (appState.autoOffEnabled) {
+        btn.classList.remove('bg-slate-300');
+        btn.classList.add('bg-emerald-500');
+        knob.classList.remove('translate-x-0');
+        knob.classList.add('translate-x-5');
+        text.innerText = 'เปิดใช้งาน (ปิดไฟอัตโนมัติ)';
+        text.className = 'text-xs font-semibold text-emerald-600';
+        showToast('เปิดระบบปิดไฟอัตโนมัติแล้ว');
+      } else {
+        btn.classList.add('bg-slate-300');
+        btn.classList.remove('bg-emerald-500');
+        knob.classList.add('translate-x-0');
+        knob.classList.remove('translate-x-5');
+        text.innerText = 'ปิดใช้งาน';
+        text.className = 'text-xs font-semibold text-slate-600';
+        showToast('ปิดระบบปิดไฟอัตโนมัติแล้ว');
+      }
+    }
+
+    function saveAutomationSettings() {
+      const timeoutEl = document.getElementById('setting-timeout');
+      appState.timeoutSeconds = parseInt(timeoutEl.value, 10);
+      showToast(`บันทึกการตั้งค่าแล้ว: หน่วงเวลาเตือน ${appState.timeoutSeconds} วิ`);
+      checkUnattendedConditions();
+      renderRoomCards();
+    }
+
+    /* ==========================================================================
+       8. Navigation Tabs (Rooms / Automation / AI)
+       ========================================================================== */
+    function switchTab(tabId) {
+      appState.currentTab = tabId;
+
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+
+      document.querySelectorAll('.sidebar-nav-item').forEach(btn => {
+        btn.classList.remove('bg-amber-50', 'text-amber-700', 'font-semibold');
+        btn.classList.add('text-slate-600');
+      });
+      const activeDeskBtn = document.getElementById(`nav-btn-${tabId}`);
+      if (activeDeskBtn) {
+        activeDeskBtn.classList.add('bg-amber-50', 'text-amber-700', 'font-semibold');
+        activeDeskBtn.classList.remove('text-slate-600');
+      }
+
+      document.querySelectorAll('.mobile-tab-btn').forEach(btn => {
+        btn.classList.remove('text-amber-600');
+        btn.classList.add('text-slate-400');
+        const icon = btn.querySelector('i');
+        if (icon) {
+          icon.classList.remove('ph-fill');
+          icon.classList.add('ph-bold');
+        }
+      });
+      const activeMobBtn = document.getElementById(`mob-btn-${tabId}`);
+      if (activeMobBtn) {
+        activeMobBtn.classList.add('text-amber-600');
+        activeMobBtn.classList.remove('text-slate-400');
+        const icon = activeMobBtn.querySelector('i');
+        if (icon) {
+          icon.classList.remove('ph-bold');
+          icon.classList.add('ph-fill');
+        }
+      }
+
+      const pageTitle = document.getElementById('page-title');
+      if (tabId === 'rooms') pageTitle.innerText = 'ควบคุมสถานะไฟห้อง';
+      if (tabId === 'automation') pageTitle.innerText = 'การตั้งค่า & แจ้งเตือน';
+      if (tabId === 'ai') pageTitle.innerText = 'ปรึกษา Lumina AI ด้านพลังงาน';
+    }
+
+    /* ==========================================================================
+       9. Lumina AI Energy Consultant (Gemini API Integration)
+       ========================================================================== */
+    async function handleAIChatSubmit(e) {
+      if (e) e.preventDefault();
+      const input = document.getElementById('ai-chat-input');
+      const text = input.value.trim();
+      if (!text) return;
+
+      appendAIChatMessage('user', text);
+      input.value = '';
+
+      await callLuminaAI(text);
+    }
+
+    function askAIPreset(promptText) {
+      switchTab('ai');
+      appendAIChatMessage('user', promptText);
+      callLuminaAI(promptText);
+    }
+
+    function appendAIChatMessage(sender, text) {
+      const container = document.getElementById('ai-chat-messages');
+      const msgDiv = document.createElement('div');
+
+      if (sender === 'user') {
+        msgDiv.className = "flex items-start justify-end gap-2.5 max-w-xl ml-auto";
+        msgDiv.innerHTML = `
+          <div class="bg-amber-500 text-white rounded-2xl rounded-tr-sm p-3.5 shadow-xs text-sm leading-relaxed">
+            ${escapeHTML(text)}
+          </div>
+          <div class="w-8 h-8 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center shrink-0 mt-0.5">
+            <i class="ph-bold ph-user text-sm"></i>
+          </div>
+        `;
+      } else {
+        msgDiv.className = "flex items-start gap-3 max-w-xl";
+        msgDiv.innerHTML = `
+          <div class="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 mt-1 shadow-sm">
+            <i class="ph-bold ph-sparkle text-base"></i>
+          </div>
+          <div class="bg-white rounded-2xl rounded-tl-sm p-4 border border-slate-200/90 shadow-xs space-y-2 text-slate-800 leading-relaxed text-sm">
+            ${formatAIMarkdown(text)}
+          </div>
+        `;
+      }
+
+      container.appendChild(msgDiv);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function appendAILoading() {
+      const container = document.getElementById('ai-chat-messages');
+      const loadDiv = document.createElement('div');
+      loadDiv.id = 'ai-chat-loading';
+      loadDiv.className = "flex items-start gap-3 max-w-xl";
+      loadDiv.innerHTML = `
+        <div class="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 mt-1 shadow-sm animate-pulse">
+          <i class="ph-bold ph-sparkle text-base"></i>
+        </div>
+        <div class="bg-white rounded-2xl rounded-tl-sm px-4 py-3 border border-slate-200/90 shadow-xs flex items-center gap-2 text-slate-500 text-xs">
+          <span class="w-2 h-2 rounded-full bg-amber-500 animate-bounce"></span>
+          <span class="w-2 h-2 rounded-full bg-amber-500 animate-bounce" style="animation-delay: 0.15s"></span>
+          <span class="w-2 h-2 rounded-full bg-amber-500 animate-bounce" style="animation-delay: 0.3s"></span>
+          <span>Lumina AI กำลังวิเคราะห์สถานะและคำนวณพลังงาน...</span>
+        </div>
+      `;
+      container.appendChild(loadDiv);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function removeAILoading() {
+      const el = document.getElementById('ai-chat-loading');
+      if (el) el.remove();
+    }
+
+    async function callLuminaAI(userPrompt) {
+      appendAILoading();
+
+      const apiKey = ""; 
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+      const liveStatus = appState.rooms.map(r => 
+        `- ${r.name}: ไฟ=${r.lightOn ? 'เปิด (' + r.powerWatt + 'W)' : 'ปิด'}, เซนเซอร์คน=${r.motionDetected ? 'มีคน' : 'ไม่มีคน'}, เปิดทิ้งไว้=${r.unattendedSeconds} วินาที`
+      ).join('\n');
+
+      const systemPrompt = `คุณคือ "Lumina AI" วิศวกรผู้เชี่ยวชาญด้านระบบสมาร์ตโฮม (Smart Lighting Automation) และการประหยัดพลังงาน
+สถานะห้องปัจจุบันในบ้าน:
+${liveStatus}
+การตั้งค่าแจ้งเตือนหน่วงเวลา: ${appState.timeoutSeconds} วินาที
+ระบบปิดไฟอัตโนมัติ (Auto-Off): ${appState.autoOffEnabled ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}`;
+
+      const payload = {
+        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] }
+      };
+
+      let retries = 0;
+      const maxRetries = 3;
+      let delay = 1000;
+
+      while (retries < maxRetries) {
+        try {
+          const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+          const data = await response.json();
+          removeAILoading();
+
+          const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (reply) {
+            appendAIChatMessage('ai', reply);
+          } else {
+            appendAIChatMessage('ai', 'ขออภัยครับ ไม่สามารถดึงคำตอบได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง');
+          }
+          return;
+        } catch (err) {
+          retries++;
+          if (retries >= maxRetries) {
+            removeAILoading();
+            appendAIChatMessage('ai', `💡 **การวิเคราะห์การใช้พลังงานเบื้องต้น:**\n- ปัจจุบันมีการเปิดไฟทิ้งไว้ในห้องที่ไม่มีคนอยู่\n- แนะนำให้กดปุ่ม "ปิดไฟเฉพาะห้องที่ไม่มีคน" หรือเปิดฟีเจอร์ "Auto-Off" เพื่อป้องกันการสูญเสียพลังงานครับ`);
+            return;
+          }
+          await new Promise(r => setTimeout(r, delay));
+          delay *= 2;
+        }
+      }
+    }
+
+    function clearAIChat() {
+      const container = document.getElementById('ai-chat-messages');
+      container.innerHTML = `
+        <div class="flex items-start gap-3 max-w-xl">
+          <div class="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 mt-1 shadow-sm">
+            <i class="ph-bold ph-robot text-base"></i>
+          </div>
+          <div class="bg-white rounded-2xl rounded-tl-sm p-4 border border-slate-200/90 shadow-xs space-y-2 text-slate-800 leading-relaxed text-sm">
+            <p class="font-semibold text-amber-700">รีเซ็ตการสนทนาเรียบร้อยครับ! 💡</p>
+            <p>พิมพ์ถามเกี่ยวกับสถานะไฟของแต่ละห้อง หรือขอคำแนะนำเรื่องการประหยัดพลังงานได้เลยครับ</p>
+          </div>
+        </div>
+      `;
+      showToast('ล้างประวัติการคุยกับ AI แล้ว');
+    }
+
+    /* ==========================================================================
+       10. Utility Notifications & Text Formatters
+       ========================================================================== */
+    function formatAIMarkdown(text) {
+      return text
+        .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900">$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
+        .replace(/\n\n/g, '<div class="h-2"></div>')
+        .replace(/\n- (.*?)/g, '<div class="flex items-start gap-1.5 my-1"><span class="text-amber-500 font-bold">•</span><span>$1</span></div>')
+        .replace(/\n/g, '<br/>');
+    }
+
+    function escapeHTML(str) {
+      return str.replace(/[&<>'"]/g, tag => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        "'": '&#39;',
+        '"': '&quot;'
+      }[tag] || tag));
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      const msgEl = document.getElementById('toast-message');
+      msgEl.innerText = message;
+
+      toast.classList.remove('translate-y-[-100px]', 'opacity-0', 'pointer-events-none');
+      toast.classList.add('translate-y-0', 'opacity-100');
+
+      setTimeout(() => {
+        toast.classList.add('translate-y-[-100px]', 'opacity-0', 'pointer-events-none');
+        toast.classList.remove('translate-y-0', 'opacity-100');
+      }, 2500);
+    }
+
+    function dismissAlertModal() {
+      const modal = document.getElementById('alert-modal');
+      modal.classList.add('opacity-0');
+      setTimeout(() => modal.classList.add('hidden'), 300);
+    }
+
+    let touchStartX = 0;
+    let touchEndX = 0;
+
+    function handleTouchStart(e) {
+      touchStartX = e.changedTouches[0].screenX;
+    }
+
+    function handleTouchEnd(e) {
+      touchEndX = e.changedTouches[0].screenX;
+      handleSwipe();
+    }
+
+    function handleSwipe() {
+      const swipeDistance = touchEndX - touchStartX;
+      const minSwipeDistance = 60;
+      const tabs = ['rooms', 'automation', 'ai'];
+      const currentIndex = tabs.indexOf(appState.currentTab);
+
+      if (Math.abs(swipeDistance) > minSwipeDistance) {
+        if (swipeDistance < 0 && currentIndex < tabs.length - 1) {
+          switchTab(tabs[currentIndex + 1]);
+        } else if (swipeDistance > 0 && currentIndex > 0) {
+          switchTab(tabs[currentIndex - 1]);
+        }
+      }
+    }
+
+    window.onload = function() {
+      renderRoomCards();
+      renderAlertHistory();
+      checkUnattendedConditions();
+
+      const mainArea = document.getElementById('main-swipe-area');
+      if (mainArea) {
+        mainArea.addEventListener('touchstart', handleTouchStart, { passive: true });
+        mainArea.addEventListener('touchend', handleTouchEnd, { passive: true });
+      }
+
+      document.body.addEventListener('click', () => {
+        initAudio();
+      }, { once: true });
+    };
+  </script>
+</body>
+</html>
